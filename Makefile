@@ -5,7 +5,7 @@ TARGET=tritontalk
 CC = gcc
 DEBUG = -g #-v
 
-LDFLAGS = -lresolv -lnsl -lpthread -lm -g
+LDFLAGS = -lresolv -lnsl -lpthread -lm
 
 OS = LINUX
 

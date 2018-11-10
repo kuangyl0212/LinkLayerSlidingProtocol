@@ -25,6 +25,21 @@ void handle_incoming_acks(Sender * sender,
     //    3) Check whether the frame is corrupted
     //    4) Check whether the frame is for this sender
     //    5) Do sliding window protocol for sender/receiver pair   
+    int incoming_msgs_length = ll_get_length(sender->input_framelist_head);
+    while (incoming_msgs_length > 0) {
+        LLnode * ll_inmsg_node = ll_pop_node(&sender->input_framelist_head);
+        incoming_msgs_length = ll_get_length(sender->input_framelist_head);
+        char * raw_char_buf = (char *) ll_inmsg_node->value;
+        Frame * inframe = convert_char_to_frame(raw_char_buf);
+        free(raw_char_buf);
+        if (inframe->kind == ACK && inframe->dst == sender->send_id) {
+            fprintf(stderr, "<SEND_%d>:[receive ack from <RECV_%d>]\n", sender->send_id ,inframe->src);
+            // do something to handle the ack
+            if (inframe->ack == 0) {
+                // retransmit the packet
+            }
+        }
+    }
 }
 
 
@@ -69,9 +84,10 @@ void handle_input_cmds(Sender * sender,
             //This is probably ONLY one step you want
             Frame * outgoing_frame = (Frame *) malloc (sizeof(Frame));
             strcpy(outgoing_frame->data, outgoing_cmd->message);
+            outgoing_frame->kind = MSG;
             outgoing_frame->src = outgoing_cmd->src_id;
             outgoing_frame->dst = outgoing_cmd->dst_id;
-            outgoing_frame->fcs = cal_crc(outgoing_cmd->message, strlen(outgoing_cmd->message));
+            outgoing_frame->fcs = cal_crc(outgoing_frame->data, strlen(outgoing_frame->data));
             
             // printf("fcs_cal--> %d\nfcs_send-->%d", fcs, outgoing_frame->fcs);
             //At this point, we don't need the outgoing_cmd

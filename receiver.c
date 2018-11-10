@@ -42,10 +42,35 @@ void handle_incoming_msgs(Receiver * receiver,
             if (inframe->fcs == cal_crc(inframe->data, strlen(inframe->data)))
             {
                 printf("<RECV_%d>:[%s]\n", receiver->recv_id, inframe->data);
+                // send a ack to sender
+                Frame * outgoing_frame = (Frame *) malloc (sizeof(Frame));
+                //strcpy(outgoing_frame->data, outgoing_cmd->message);
+                outgoing_frame->kind = ACK;
+                outgoing_frame->src = receiver->recv_id;
+                outgoing_frame->dst = inframe->src;
+                outgoing_frame->ack = 1;
+                //outgoing_frame->fcs = cal_crc(outgoing_frame->data, strlen(outgoing_frame->data));
+
+                char * raw_ack_bufer = convert_frame_to_char(outgoing_frame);
+                ll_append_node(outgoing_frames_head_ptr,
+                           raw_ack_bufer);
+                free(outgoing_frame);
             }
             else
             {
-                printf("<RECV_%d>:[something wrong!!!]\n", receiver->recv_id);
+                //printf("<RECV_%d>:[something wrong!!!]\n", receiver->recv_id);
+                Frame * outgoing_frame = (Frame *) malloc (sizeof(Frame));
+                //strcpy(outgoing_frame->data, outgoing_cmd->message);
+                outgoing_frame->kind = ACK;
+                outgoing_frame->src = receiver->recv_id;
+                outgoing_frame->dst = inframe->src;
+                outgoing_frame->ack = 0;
+                //outgoing_frame->fcs = cal_crc(outgoing_frame->data, strlen(outgoing_frame->data));
+
+                char * raw_ack_bufer = convert_frame_to_char(outgoing_frame);
+                ll_append_node(outgoing_frames_head_ptr,
+                           raw_ack_bufer);
+                free(outgoing_frame);
             }
         }
 
