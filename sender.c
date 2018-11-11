@@ -35,12 +35,12 @@ void print_queue(Sender *sender){
     int max = SWS;
     int start = sender->LAR;
     int end = sender->LFS;
-    // fprintf(stderr, "**LAR:%d\n",start);
-    // fprintf(stderr, "**LFS:%d\n",end);
+    fprintf(stderr, "**LAR:%d\n",start);
+    fprintf(stderr, "**LFS:%d\n",end);
     while(start!=end){
         Frame *ff = sender->sendQ[start].frame;
         char seq_num = ff->SeqNum;
-        // fprintf(stderr, "**seq_num:%d\n", seq_num);
+        fprintf(stderr, "**seq_num:%d\n", seq_num);
         start+=1;
         start%=max;
     }
@@ -64,6 +64,10 @@ void handle_incoming_acks(Sender * sender,
         Frame * inframe = convert_char_to_frame(raw_char_buf);
         // fprintf(stderr, "**received packet from receiver\n");
         free(raw_char_buf);
+        // deal with crupted ack
+        if (inframe->fcs != cal_crc(inframe->data, strlen(inframe->data))) {
+            continue;
+        }
         // print_frame(inframe);
         if (inframe->dst == sender->send_id) {
             //fprintf(stderr, "<SEND_%d>:[receive ack from <RECV_%d>]\n", sender->send_id ,inframe->src);

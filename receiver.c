@@ -15,6 +15,17 @@ void print_frame(Frame * inframe) {
         inframe->src, inframe->dst, inframe->SeqNum, inframe->AckNum, inframe->data);
 }
 
+Frame * build_ack( unsigned char flag, unsigned char src, unsigned char dst, unsigned AckNum){
+    Frame * ack_frame = (Frame *) malloc (sizeof(Frame));
+    //strcpy(ack_frame->data, outgoing_cmd->message);
+    ack_frame->Flags = flag;
+    ack_frame->src = src;
+    ack_frame->dst = dst;
+    ack_frame->AckNum = AckNum; //
+    ack_frame->fcs = cal_crc(ack_frame->data, strlen(ack_frame->data));
+    return ack_frame;
+}
+
 
 void handle_incoming_msgs(Receiver * receiver,
                           LLnode ** outgoing_frames_head_ptr)
@@ -46,6 +57,7 @@ void handle_incoming_msgs(Receiver * receiver,
         // fprintf(stderr, "-----\n");
         //Free raw_char_buf
         free(raw_char_buf);
+        
         if (inframe->dst == receiver->recv_id) {
             // unsigned int fcs = cal_crc(inframe->data, strlen(inframe->data));
             //printf("fcs_receive-->%d\nfcs_cal-->%d\n", inframe->fcs, fcs);
@@ -58,78 +70,51 @@ void handle_incoming_msgs(Receiver * receiver,
                     // deal with correct frames
                     printf("<RECV_%d>:[%s]\n", receiver->recv_id, inframe->data);
                     // send a ack to sender
-                    Frame * outgoing_frame = (Frame *) malloc (sizeof(Frame));
-                    //strcpy(outgoing_frame->data, outgoing_cmd->message);
-                    outgoing_frame->Flags = ACK;
-                    outgoing_frame->src = receiver->recv_id;
-                    outgoing_frame->dst = inframe->src;
-                    outgoing_frame->AckNum = inframe->SeqNum; // means the frame is correct
-                    // outgoing_frame->SeqNum = inframe->SeqNum;
-                    //outgoing_frame->fcs = cal_crc(outgoing_frame->data, strlen(outgoing_frame->data));
+                    Frame * ack_frame = build_ack(ACK, receiver->recv_id, inframe->src, inframe->SeqNum);
 
-                    char * raw_ack_bufer = convert_frame_to_char(outgoing_frame);
+                    char * raw_ack_bufer = convert_frame_to_char(ack_frame);
                     ll_append_node(outgoing_frames_head_ptr,
                             raw_ack_bufer);
                     // fprintf(stderr, "\nreceice a correct frame and sed a ack:-----\n");
                     // print_frame(outgoing_frame);
-                    free(outgoing_frame);
+                    free(ack_frame);
                     receiver->NFE = (receiver->NFE + 1) % MAX_SEQ;
                 }
                 else
                 {
                     // deal with crupted frames
                     //printf("<RECV_%d>:[something wrong!!!]\n", receiver->recv_id);
-                    Frame * outgoing_frame = (Frame *) malloc (sizeof(Frame));
-                    //strcpy(outgoing_frame->data, outgoing_cmd->message);
-                    outgoing_frame->Flags = NAK;
-                    outgoing_frame->src = receiver->recv_id;
-                    outgoing_frame->dst = inframe->src;
-                    outgoing_frame->AckNum = inframe->SeqNum; // means the frame is wrong
-                    // outgoing_frame->SeqNum = inframe->SeqNum;
-                    //outgoing_frame->fcs = cal_crc(outgoing_frame->data, strlen(outgoing_frame->data));
+                    Frame * ack_frame = build_ack(NAK, receiver->recv_id, inframe->src, inframe->SeqNum);
 
-                    char * raw_ack_bufer = convert_frame_to_char(outgoing_frame);
+                    char * raw_ack_bufer = convert_frame_to_char(ack_frame);
                     ll_append_node(outgoing_frames_head_ptr,
                             raw_ack_bufer);
-                    free(outgoing_frame);
+                    free(ack_frame);
                     // fprintf(stderr, "\nreceice a crupted frame:-----\n");
                 }
             // }
             }
             else if (inframe->SeqNum < receiver->NFE) {
                 // deal with duplicated packet
-                Frame * outgoing_frame = (Frame *) malloc (sizeof(Frame));
-                //strcpy(outgoing_frame->data, outgoing_cmd->message);
-                outgoing_frame->Flags = ACK;
-                outgoing_frame->src = receiver->recv_id;
-                outgoing_frame->dst = inframe->src;
-                outgoing_frame->AckNum = inframe->SeqNum; // means the frame is correct
-                // outgoing_frame->SeqNum = inframe->SeqNum;
-                //outgoing_frame->fcs = cal_crc(outgoing_frame->data, strlen(outgoing_frame->data));
+                Frame * ack_frame = build_ack(ACK, receiver->recv_id, inframe->src, inframe->SeqNum);
+                //strcpy(ack_frame->data, outgoing_cmd->message);
 
-                char * raw_ack_bufer = convert_frame_to_char(outgoing_frame);
+                char * raw_ack_bufer = convert_frame_to_char(ack_frame);
                 ll_append_node(outgoing_frames_head_ptr,
                         raw_ack_bufer);
                 // fprintf(stderr, "\nreceice a duplicated frame and sed a ack:-----\n");
-                // print_frame(outgoing_frame);
-                free(outgoing_frame);
+                // print_frame(ack_frame);
+                free(ack_frame);
             }
             else {
                 // deal with frames out of window
                 //printf("<RECV_%d>:[something wrong!!!]\n", receiver->recv_id);
-                Frame * outgoing_frame = (Frame *) malloc (sizeof(Frame));
-                //strcpy(outgoing_frame->data, outgoing_cmd->message);
-                outgoing_frame->Flags = NAK;
-                outgoing_frame->src = receiver->recv_id;
-                outgoing_frame->dst = inframe->src;
-                outgoing_frame->AckNum = inframe->SeqNum; // means the frame is wrong
-                // outgoing_frame->SeqNum = inframe->SeqNum;
-                //outgoing_frame->fcs = cal_crc(outgoing_frame->data, strlen(outgoing_frame->data));
+                Frame * ack_frame = build_ack(NAK, receiver->recv_id, inframe->src, inframe->SeqNum);
 
-                char * raw_ack_bufer = convert_frame_to_char(outgoing_frame);
+                char * raw_ack_bufer = convert_frame_to_char(ack_frame);
                 ll_append_node(outgoing_frames_head_ptr,
                         raw_ack_bufer);
-                free(outgoing_frame);
+                free(ack_frame);
                 // fprintf(stderr, "\n**receice a wrong sqe_num:-----\n");
             }
         }
