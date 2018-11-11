@@ -1,0 +1,5 @@
+.vscode/
+.debug*
+.expected*
+.output*
+.vscode/launch.json
