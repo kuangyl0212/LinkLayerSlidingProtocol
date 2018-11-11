@@ -8,9 +8,12 @@ void init_sender(Sender * sender, int id)
     sender->input_cmdlist_head = NULL;
     sender->input_framelist_head = NULL;
 
-    sender->SeqNum = 0;
-    sender->LAR = 0;
-    sender->LFS = 0;
+    // sender->SeqNum = 0;
+    // sender->LAR = 0;
+    // sender->LFS = 0;
+    memset(sender->SeqNum, 0, sizeof(sender->SeqNum));
+    memset(sender->LAR, 0, sizeof(sender->LAR));
+    memset(sender->LFS, 0, sizeof(sender->LFS));
 }
 
 struct timeval * sender_get_next_expiring_timeval(Sender * sender)
@@ -19,26 +22,26 @@ struct timeval * sender_get_next_expiring_timeval(Sender * sender)
     return NULL;
 }
 
-int sendQ_full(Sender *sender){
-    return (sender->LFS+1)%SWS==sender->LAR;
+int sendQ_full(Sender *sender, unsigned char i){
+    return (sender->LFS[i] + 1) % SWS==sender->LAR[i];
 }
 
-int sendQ_empty(Sender *sender){
-    return sender->LFS == sender->LAR;
+int sendQ_empty(Sender *sender, unsigned char i){
+    return sender->LFS[i] == sender->LAR[i];
 }
 
 // void print_frame(Frame * inframe) {
 //     fprintf(stderr, "**dst:[RECV_%d]\nsqe_num:[%d]\ndata:[%s]\n", inframe->dst, inframe->SeqNum, inframe->data);
 // }
 
-void print_queue(Sender *sender){
+void print_queue(Sender *sender, unsigned char i){
     int max = SWS;
-    int start = sender->LAR;
-    int end = sender->LFS;
+    int start = sender->LAR[i];
+    int end = sender->LFS[i];
     fprintf(stderr, "**LAR:%d\n",start);
     fprintf(stderr, "**LFS:%d\n",end);
     while(start!=end){
-        Frame *ff = sender->sendQ[start].frame;
+        Frame *ff = sender->sendQ[i][start].frame;
         char seq_num = ff->SeqNum;
         fprintf(stderr, "**seq_num:%d\n", seq_num);
         start+=1;
@@ -77,14 +80,14 @@ void handle_incoming_acks(Sender * sender,
                 // dequeue
                 // fprintf(stderr, "**received ack for sqe_num:%d\n", inframe->AckNum);
                 // print_queue(sender);
-                int start = sender->LAR;
-                int end = sender->LFS;
+                int start = sender->LAR[inframe->src];
+                int end = sender->LFS[inframe->src];
 
                 int pop_end = -1;
 
                 while(start!=end){
 
-                    Frame *frame_in_queue = sender->sendQ[start].frame;
+                    Frame *frame_in_queue = sender->sendQ[inframe->src][start].frame;
                     if(!frame_in_queue){
                         break;
                     }
@@ -98,14 +101,14 @@ void handle_incoming_acks(Sender * sender,
                 }
                 // fprintf(stderr, "pop end:%d\n", pop_end);
                 if(pop_end!=-1){
-                    start = sender->LAR;
+                    start = sender->LAR[inframe->src];
                     end = (pop_end+1) % SWS;
 
                     while(start!=end){
 
-                        Frame *frame_in_queue = sender->sendQ[start].frame;
-                        sender->sendQ[start].frame = NULL;
-                        sender->LAR = (sender->LAR + 1) % SWS;
+                        Frame *frame_in_queue = sender->sendQ[inframe->src][start].frame;
+                        sender->sendQ[inframe->src][start].frame = NULL;
+                        sender->LAR[inframe->src] = (sender->LAR[inframe->src] + 1) % SWS;
                         // sender->RWS-=1;
 
                         free(frame_in_queue);
@@ -122,12 +125,12 @@ void handle_incoming_acks(Sender * sender,
                 int is_send_start = 0;
 
                 int max = SWS;
-                int start = sender->LAR;
-                int end = sender->LFS;
+                int start = sender->LAR[inframe->src];
+                int end = sender->LFS[inframe->src];
 
                 while(start!=end){
 
-                    Frame *frame_in_queue = sender->sendQ[start].frame;
+                    Frame *frame_in_queue = sender->sendQ[inframe->src][start].frame;
                     char seq_num = frame_in_queue->SeqNum;
                     if(seq_num == inframe->AckNum){
                         is_send_start = 1;
@@ -162,8 +165,9 @@ void handle_input_cmds(Sender * sender,
     input_cmd_length = ll_get_length(sender->input_cmdlist_head);
     while (input_cmd_length > 0)
     {
-
-        if(sendQ_full(sender)){
+        LLnode * lh = sender->input_cmdlist_head;
+        Cmd * lh_cmd = (Cmd *)lh->value;
+        if (sendQ_full(sender, lh_cmd->dst_id)) {
             break;
         }
         //Pop a node off and update the input_cmd_length
@@ -172,6 +176,10 @@ void handle_input_cmds(Sender * sender,
 
         //Cast to Cmd type and free up the memory for the node
         Cmd * outgoing_cmd = (Cmd *) ll_input_cmd_node->value;
+        // if (sendQ_full(sender, outgoing_cmd->dst_id)){
+        //     ll_append_node(&sender->input_cmdlist_head, outgoing_cmd);
+        //     break;
+        // }
         free(ll_input_cmd_node);
             
 
@@ -194,7 +202,7 @@ void handle_input_cmds(Sender * sender,
             outgoing_frame->Flags = DATA;
             outgoing_frame->src = outgoing_cmd->src_id;
             outgoing_frame->dst = outgoing_cmd->dst_id;
-            outgoing_frame->SeqNum = sender->SeqNum;
+            outgoing_frame->SeqNum = sender->SeqNum[outgoing_cmd->dst_id];
             outgoing_frame->fcs = cal_crc(outgoing_frame->data, strlen(outgoing_frame->data));
             
             // printf("fcs_cal--> %d\nfcs_send-->%d", fcs, outgoing_frame->fcs);
@@ -212,18 +220,18 @@ void handle_input_cmds(Sender * sender,
             gettimeofday(&current_time,NULL);
 
 
-            sender->sendQ[sender->LFS].startime.tv_sec = current_time.tv_sec;       /* Seconds.  */
-            sender->sendQ[sender->LFS].startime.tv_usec = current_time.tv_usec; 	/* Microseconds.  */
-            sender->sendQ[sender->LFS].endtime.tv_sec = current_time.tv_sec;
-            sender->sendQ[sender->LFS].endtime.tv_usec = current_time.tv_usec + 100;
+            sender->sendQ[outgoing_cmd->dst_id][sender->LFS[outgoing_cmd->dst_id]].startime.tv_sec = current_time.tv_sec;       /* Seconds.  */
+            sender->sendQ[outgoing_cmd->dst_id][sender->LFS[outgoing_cmd->dst_id]].startime.tv_usec = current_time.tv_usec; 	/* Microseconds.  */
+            sender->sendQ[outgoing_cmd->dst_id][sender->LFS[outgoing_cmd->dst_id]].endtime.tv_sec = current_time.tv_sec;
+            sender->sendQ[outgoing_cmd->dst_id][sender->LFS[outgoing_cmd->dst_id]].endtime.tv_usec = current_time.tv_usec + 100;
             // fprintf(stderr ,"\nbefore inqueue------\n");
             // print_frame(outgoing_frame);
             // fprintf(stderr ,"------\n");
 
-            sender->sendQ[sender->LFS].frame = outgoing_frame;
+            sender->sendQ[outgoing_cmd->dst_id][sender->LFS[outgoing_cmd->dst_id]].frame = outgoing_frame;
 
-            sender->LFS = (1 + sender->LFS) % SWS;
-            sender->SeqNum = (1 + sender->SeqNum) % MAX_SEQ;
+            sender->LFS[outgoing_cmd->dst_id] = (1 + sender->LFS[outgoing_cmd->dst_id]) % SWS;
+            sender->SeqNum[outgoing_cmd->dst_id] = (1 + sender->SeqNum[outgoing_cmd->dst_id]) % MAX_SEQ;
 
              //At this point, we don't need the outgoing_cmd
             free(outgoing_cmd->message);
@@ -241,21 +249,21 @@ void handle_timedout_frames(Sender * sender,
     //    1) Iterate through the sliding window protocol information you maintain for each receiver
     //    2) Locate frames that are timed out and add them to the outgoing frames
     //    3) Update the next timeout field on the outgoing frames
-
-    if(sendQ_empty(sender)){
-        return ;
+    for (unsigned char i = 0; i < glb_receivers_array_length; i++){
+    if(sendQ_empty(sender, i)){
+        continue ;
     }
     struct timeval  curr_timeval;
 
-    int start = sender->LAR;
-    int end = sender->LFS;
+    int start = sender->LAR[i];
+    int end = sender->LFS[i];
 
     while(start!=end){
     	gettimeofday(&curr_timeval,NULL);
-    	long last_time = timeval_usecdiff(&curr_timeval,&(sender->sendQ[start].endtime));
+    	long last_time = timeval_usecdiff(&curr_timeval,&(sender->sendQ[i][start].endtime));
 
 		if(last_time<0){
-		        Frame *f = sender->sendQ[start].frame;
+		        Frame *f = sender->sendQ[i][start].frame;
 
 		        char * outgoing_charbuf = convert_frame_to_char(f);
 		        ll_append_node(outgoing_frames_head_ptr, outgoing_charbuf);
@@ -263,13 +271,13 @@ void handle_timedout_frames(Sender * sender,
 		        struct timeval current_time;
 		        gettimeofday(&current_time,NULL);
 
-		        sender->sendQ[start].startime.tv_sec = current_time.tv_sec;
-		        sender->sendQ[start].startime.tv_usec = current_time.tv_usec;
-		        sender->sendQ[start].endtime.tv_sec = current_time.tv_sec;
-		        sender->sendQ[start].endtime.tv_usec = current_time.tv_usec+100;
+		        sender->sendQ[i][start].startime.tv_sec = current_time.tv_sec;
+		        sender->sendQ[i][start].startime.tv_usec = current_time.tv_usec;
+		        sender->sendQ[i][start].endtime.tv_sec = current_time.tv_sec;
+		        sender->sendQ[i][start].endtime.tv_usec = current_time.tv_usec+100;
 		}
         start = (1 + start) % SWS;
-    }
+    }}
 }
 
 

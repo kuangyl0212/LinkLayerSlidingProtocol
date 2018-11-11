@@ -6,12 +6,13 @@ void init_receiver(Receiver * receiver,
 {
     receiver->recv_id = id;
     receiver->input_framelist_head = NULL;
-    receiver->NFE = 0;
+    // receiver->NFE = 0;
+    memset(receiver->NFE, 0, sizeof(unsigned char) * MAX_TER);
 }
 
 void print_frame(Frame * inframe) {
     fprintf(stderr, 
-        "**src:[%d]\ndst:[%d]\nsqe_num:[%d]\nack_num:[%d]\ndata:[%s]\n", 
+        "**frame:\n\tsrc:[%d]\n\tdst:[%d]\n\tsqe_num:[%d]\n\tack_num:[%d]\n\tdata:[%s]\n", 
         inframe->src, inframe->dst, inframe->SeqNum, inframe->AckNum, inframe->data);
 }
 
@@ -52,7 +53,7 @@ void handle_incoming_msgs(Receiver * receiver,
         char * raw_char_buf = (char *) ll_inmsg_node->value;
         Frame * inframe = convert_char_to_frame(raw_char_buf);
         // fprintf(stderr, "\nreceicer:-----\n");
-        // print_frame(inframe);
+        print_frame(inframe);
         // fprintf(stderr, "NFE:%d\n", receiver->NFE);
         // fprintf(stderr, "-----\n");
         //Free raw_char_buf
@@ -63,7 +64,7 @@ void handle_incoming_msgs(Receiver * receiver,
             //printf("fcs_receive-->%d\nfcs_cal-->%d\n", inframe->fcs, fcs);
             // only when LFR < SeqNum ≤ LAF
             //if (receiver->LFR < inframe->SeqNum && inframe->SeqNum <= receiver->LAF ) {
-            if (inframe->SeqNum == receiver->NFE) {
+            if (inframe->SeqNum == receiver->NFE[inframe->src]) {
                 // fprintf(stderr, "\nreceice the right sqe_num:-----\n");
                 if (inframe->fcs == cal_crc(inframe->data, strlen(inframe->data)))
                 {
@@ -78,7 +79,7 @@ void handle_incoming_msgs(Receiver * receiver,
                     // fprintf(stderr, "\nreceice a correct frame and sed a ack:-----\n");
                     // print_frame(outgoing_frame);
                     free(ack_frame);
-                    receiver->NFE = (receiver->NFE + 1) % MAX_SEQ;
+                    receiver->NFE[inframe->src] = (receiver->NFE[inframe->src] + 1) % MAX_SEQ;
                 }
                 else
                 {
@@ -94,7 +95,7 @@ void handle_incoming_msgs(Receiver * receiver,
                 }
             // }
             }
-            else if (inframe->SeqNum < receiver->NFE) {
+            else if (inframe->SeqNum < receiver->NFE[inframe->src]) {
                 // deal with duplicated packet
                 Frame * ack_frame = build_ack(ACK, receiver->recv_id, inframe->src, inframe->SeqNum);
                 //strcpy(ack_frame->data, outgoing_cmd->message);

@@ -80,6 +80,8 @@ struct Frame_t
 };
 typedef struct Frame_t Frame;
 
+#define MAX_TER 128
+
 //Receiver and sender data structures
 #define RWS 1 /* receive window size */
 struct Receiver_t
@@ -96,7 +98,7 @@ struct Receiver_t
     int recv_id;
     // unsigned char LAF; // largest acceptable frame
     // unsigned char LFR; // last frame received
-    unsigned char NFE; // next frame expected
+    unsigned char NFE[MAX_TER]; // next frame expected
 };
 
 
@@ -124,10 +126,10 @@ struct Sender_t
     int send_id;
 
     // sliding windows relative variables
-    unsigned char LAR; // last ack received
-    unsigned char LFS; // last frame sent
-    unsigned char SeqNum;
-    struct sendQ_slot sendQ[SWS];
+    unsigned char LAR[MAX_TER]; // last ack received
+    unsigned char LFS[MAX_TER]; // last frame sent
+    unsigned char SeqNum[MAX_TER];
+    struct sendQ_slot sendQ[MAX_TER][SWS];
 
 };
 
