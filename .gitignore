@@ -2,5 +2,6 @@
 .debug*
 .expected*
 .output*
-.vscode/launch.json
-project1.tgz
+*.tgz
+*.o
+*.json
