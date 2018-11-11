@@ -55,8 +55,33 @@ struct LLnode_t
 };
 typedef struct LLnode_t LLnode;
 
+#define MAX_FRAME_SIZE 64
+#define FRAME_HEAD_SIZE (sizeof(unsigned char) * 5 + sizeof(unsigned int))
+//TODO: You should change this!
+//Remember, your frame can be AT MOST 64 bytes!
+#define FRAME_PAYLOAD_SIZE (MAX_FRAME_SIZE - FRAME_HEAD_SIZE)
+
+// values for Flags field
+#define DATA 1
+#define ACK 2
+#define NAK 3
+
+#define MAX_SEQ 256
+
+struct Frame_t
+{
+    unsigned char src; // sender id
+    unsigned char dst; // receiver id
+    unsigned char Flags; // whether the frame is an ACK or carries data
+    unsigned char SeqNum; // sequence number of this frame
+    unsigned char AckNum; // ack of received frame
+    char data[FRAME_PAYLOAD_SIZE];
+    unsigned int fcs; // crc
+};
+typedef struct Frame_t Frame;
 
 //Receiver and sender data structures
+#define RWS 1 /* receive window size */
 struct Receiver_t
 {
     //DO NOT CHANGE:
@@ -69,8 +94,21 @@ struct Receiver_t
     LLnode * input_framelist_head;
     
     int recv_id;
+    // unsigned char LAF; // largest acceptable frame
+    // unsigned char LFR; // last frame received
+    unsigned char NFE; // next frame expected
 };
 
+
+struct sendQ_slot {
+    struct timeval  endtime;
+    struct timeval startime;
+    Frame *frame;
+};
+
+// SWS sliding window size
+// LAR - LFS <= SWS
+#define SWS 8
 struct Sender_t
 {
     //DO NOT CHANGE:
@@ -84,6 +122,13 @@ struct Sender_t
     LLnode * input_cmdlist_head;
     LLnode * input_framelist_head;
     int send_id;
+
+    // sliding windows relative variables
+    unsigned char LAR; // last ack received
+    unsigned char LFS; // last frame sent
+    unsigned char SeqNum;
+    struct sendQ_slot sendQ[SWS];
+
 };
 
 enum SendFrame_DstType 
@@ -94,30 +139,6 @@ enum SendFrame_DstType
 
 typedef struct Sender_t Sender;
 typedef struct Receiver_t Receiver;
-
-
-#define MAX_FRAME_SIZE 64
-#define FRAME_HEAD_SIZE (sizeof(unsigned char) * 5 + sizeof(unsigned int))
-//TODO: You should change this!
-//Remember, your frame can be AT MOST 64 bytes!
-#define FRAME_PAYLOAD_SIZE (MAX_FRAME_SIZE - FRAME_HEAD_SIZE)
-
-#define MSG 1
-#define ACK 2
-#define MAX_SEQ 256
-
-struct Frame_t
-{
-    unsigned char src;
-    unsigned char dst;
-    unsigned char kind;
-    unsigned char seq;
-    unsigned char ack;
-    char data[FRAME_PAYLOAD_SIZE];
-    unsigned int fcs;
-};
-typedef struct Frame_t Frame;
-
 
 //Declare global variables here
 //DO NOT CHANGE: 

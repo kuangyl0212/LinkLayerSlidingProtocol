@@ -7,12 +7,43 @@ void init_sender(Sender * sender, int id)
     sender->send_id = id;
     sender->input_cmdlist_head = NULL;
     sender->input_framelist_head = NULL;
+
+    sender->SeqNum = 0;
+    sender->LAR = 0;
+    sender->LFS = 0;
 }
 
 struct timeval * sender_get_next_expiring_timeval(Sender * sender)
 {
     //TODO: You should fill in this function so that it returns the next timeout that should occur
     return NULL;
+}
+
+int sendQ_full(Sender *sender){
+    return (sender->LFS+1)%SWS==sender->LAR;
+}
+
+int sendQ_empty(Sender *sender){
+    return sender->LFS == sender->LAR;
+}
+
+// void print_frame(Frame * inframe) {
+//     fprintf(stderr, "**dst:[RECV_%d]\nsqe_num:[%d]\ndata:[%s]\n", inframe->dst, inframe->SeqNum, inframe->data);
+// }
+
+void print_queue(Sender *sender){
+    int max = SWS;
+    int start = sender->LAR;
+    int end = sender->LFS;
+    // fprintf(stderr, "**LAR:%d\n",start);
+    // fprintf(stderr, "**LFS:%d\n",end);
+    while(start!=end){
+        Frame *ff = sender->sendQ[start].frame;
+        char seq_num = ff->SeqNum;
+        // fprintf(stderr, "**seq_num:%d\n", seq_num);
+        start+=1;
+        start%=max;
+    }
 }
 
 
@@ -31,12 +62,80 @@ void handle_incoming_acks(Sender * sender,
         incoming_msgs_length = ll_get_length(sender->input_framelist_head);
         char * raw_char_buf = (char *) ll_inmsg_node->value;
         Frame * inframe = convert_char_to_frame(raw_char_buf);
+        // fprintf(stderr, "**received packet from receiver\n");
         free(raw_char_buf);
-        if (inframe->kind == ACK && inframe->dst == sender->send_id) {
-            fprintf(stderr, "<SEND_%d>:[receive ack from <RECV_%d>]\n", sender->send_id ,inframe->src);
+        // print_frame(inframe);
+        if (inframe->dst == sender->send_id) {
+            //fprintf(stderr, "<SEND_%d>:[receive ack from <RECV_%d>]\n", sender->send_id ,inframe->src);
             // do something to handle the ack
-            if (inframe->ack == 0) {
-                // retransmit the packet
+            if (inframe->Flags == ACK) {
+                // deal with ack
+                // dequeue
+                // fprintf(stderr, "**received ack for sqe_num:%d\n", inframe->AckNum);
+                // print_queue(sender);
+                int start = sender->LAR;
+                int end = sender->LFS;
+
+                int pop_end = -1;
+
+                while(start!=end){
+
+                    Frame *frame_in_queue = sender->sendQ[start].frame;
+                    if(!frame_in_queue){
+                        break;
+                    }
+                    char seq_num = frame_in_queue->SeqNum;
+
+                    if(seq_num==inframe->AckNum){
+                        pop_end = start;
+                        break;
+                    }
+                    start = (1 + start) % SWS;
+                }
+                // fprintf(stderr, "pop end:%d\n", pop_end);
+                if(pop_end!=-1){
+                    start = sender->LAR;
+                    end = (pop_end+1) % SWS;
+
+                    while(start!=end){
+
+                        Frame *frame_in_queue = sender->sendQ[start].frame;
+                        sender->sendQ[start].frame = NULL;
+                        sender->LAR = (sender->LAR + 1) % SWS;
+                        // sender->RWS-=1;
+
+                        free(frame_in_queue);
+
+                        start = (1 + start) % SWS;
+                    }
+                }
+                // fprintf(stderr, "after pop:\n");
+                // print_queue(sender);
+            }
+            else if (inframe->Flags == NAK) {
+                // deal with nak
+                //
+                int is_send_start = 0;
+
+                int max = SWS;
+                int start = sender->LAR;
+                int end = sender->LFS;
+
+                while(start!=end){
+
+                    Frame *frame_in_queue = sender->sendQ[start].frame;
+                    char seq_num = frame_in_queue->SeqNum;
+                    if(seq_num == inframe->AckNum){
+                        is_send_start = 1;
+                    }
+                    if(is_send_start){
+                        char * outgoing_charbuf = convert_frame_to_char(frame_in_queue);
+                        ll_append_node(outgoing_frames_head_ptr,
+                                    outgoing_charbuf);
+                    }
+                    start+=1;
+                    start%=max;
+                }
             }
         }
     }
@@ -59,6 +158,10 @@ void handle_input_cmds(Sender * sender,
     input_cmd_length = ll_get_length(sender->input_cmdlist_head);
     while (input_cmd_length > 0)
     {
+
+        if(sendQ_full(sender)){
+            break;
+        }
         //Pop a node off and update the input_cmd_length
         LLnode * ll_input_cmd_node = ll_pop_node(&sender->input_cmdlist_head);
         input_cmd_length = ll_get_length(sender->input_cmdlist_head);
@@ -84,21 +187,44 @@ void handle_input_cmds(Sender * sender,
             //This is probably ONLY one step you want
             Frame * outgoing_frame = (Frame *) malloc (sizeof(Frame));
             strcpy(outgoing_frame->data, outgoing_cmd->message);
-            outgoing_frame->kind = MSG;
+            outgoing_frame->Flags = DATA;
             outgoing_frame->src = outgoing_cmd->src_id;
             outgoing_frame->dst = outgoing_cmd->dst_id;
+            outgoing_frame->SeqNum = sender->SeqNum;
             outgoing_frame->fcs = cal_crc(outgoing_frame->data, strlen(outgoing_frame->data));
             
             // printf("fcs_cal--> %d\nfcs_send-->%d", fcs, outgoing_frame->fcs);
-            //At this point, we don't need the outgoing_cmd
-            free(outgoing_cmd->message);
-            free(outgoing_cmd);
+           
 
             //Convert the message to the outgoing_charbuf
             char * outgoing_charbuf = convert_frame_to_char(outgoing_frame);
             ll_append_node(outgoing_frames_head_ptr,
                            outgoing_charbuf);
-            free(outgoing_frame);
+            
+            // not free frame until it is acked
+            // free(outgoing_frame);
+
+            struct timeval current_time;
+            gettimeofday(&current_time,NULL);
+
+
+            sender->sendQ[sender->LFS].startime.tv_sec = current_time.tv_sec;       /* Seconds.  */
+            sender->sendQ[sender->LFS].startime.tv_usec = current_time.tv_usec; 	/* Microseconds.  */
+            sender->sendQ[sender->LFS].endtime.tv_sec = current_time.tv_sec;
+            sender->sendQ[sender->LFS].endtime.tv_usec = current_time.tv_usec + 100;
+            // fprintf(stderr ,"\nbefore inqueue------\n");
+            // print_frame(outgoing_frame);
+            // fprintf(stderr ,"------\n");
+
+            sender->sendQ[sender->LFS].frame = outgoing_frame;
+
+            sender->LFS = (1 + sender->LFS) % SWS;
+            sender->SeqNum = (1 + sender->SeqNum) % MAX_SEQ;
+
+             //At this point, we don't need the outgoing_cmd
+            free(outgoing_cmd->message);
+            free(outgoing_cmd);
+
         }
     }   
 }
@@ -111,6 +237,35 @@ void handle_timedout_frames(Sender * sender,
     //    1) Iterate through the sliding window protocol information you maintain for each receiver
     //    2) Locate frames that are timed out and add them to the outgoing frames
     //    3) Update the next timeout field on the outgoing frames
+
+    if(sendQ_empty(sender)){
+        return ;
+    }
+    struct timeval  curr_timeval;
+
+    int start = sender->LAR;
+    int end = sender->LFS;
+
+    while(start!=end){
+    	gettimeofday(&curr_timeval,NULL);
+    	long last_time = timeval_usecdiff(&curr_timeval,&(sender->sendQ[start].endtime));
+
+		if(last_time<0){
+		        Frame *f = sender->sendQ[start].frame;
+
+		        char * outgoing_charbuf = convert_frame_to_char(f);
+		        ll_append_node(outgoing_frames_head_ptr, outgoing_charbuf);
+
+		        struct timeval current_time;
+		        gettimeofday(&current_time,NULL);
+
+		        sender->sendQ[start].startime.tv_sec = current_time.tv_sec;
+		        sender->sendQ[start].startime.tv_usec = current_time.tv_usec;
+		        sender->sendQ[start].endtime.tv_sec = current_time.tv_sec;
+		        sender->sendQ[start].endtime.tv_usec = current_time.tv_usec+100;
+		}
+        start = (1 + start) % SWS;
+    }
 }
 
 
